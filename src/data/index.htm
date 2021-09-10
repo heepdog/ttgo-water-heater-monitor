@@ -1,0 +1,185 @@
+<!-- 
+  FSWebServer - Example Index Page
+  Copyright (c) 2015 Hristo Gochkov. All rights reserved.
+  This file is part of the WebServer library for Arduino environment.
+ 
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+  You should have received a copy of the GNU Lesser General Public
+  License along with this library; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+-->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+  <title>ESP Monitor</title>
+  <script type="text/javascript" src="graphs.js"></script>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <script type="text/javascript">
+
+
+    var heap,temp,temp2,digi;
+    var reloadPeriod = 1000;
+    var running = false;
+    var data,chart,chartdata,options;
+    var chartsLoaded = false;
+
+
+  // Load the Visualization API and the corechart package.
+  google.charts.load('current', {'packages':['corechart']});
+
+  google.charts.setOnLoadCallback(drawChart);
+
+  function drawChart() {
+
+    chartsLoaded = true;    
+
+    chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
+      chartdata = new google.visualization.DataTable();
+      chartdata.addColumn('datetime', 'time');
+      chartdata.addColumn('number', 'temperature');
+
+    options = {
+      chart: {
+          title: 'temp of heater',
+          subtitle: 'in degrees'
+      },
+      hAxis: {
+            format: 'MM/dd/yy hh:mm',
+            gridlines: {count: 15}
+          },
+      vAxis:{
+           viewWindowMode:'explicit',
+            viewWindow: {
+              max:140,
+              min:80},
+ 
+      },
+      width: 900,
+      height: 500
+    };
+
+
+    //chart.draw(chartdata, options);
+
+  }
+
+
+
+    function loadValues(){
+      if(!running) return;
+      var xh = new XMLHttpRequest();
+      xh.addEventListener("readystatechange",function(){
+      //xh.onreadystatechange = function(){
+        if (xh.readyState == 4){
+          if(xh.status == 200) {
+            
+            getData(xh.responseText, {passive: true})
+
+          } 
+          else 
+            running = false;
+        }
+      }, {passive: true});
+
+      xh.open("GET", "/all", true);
+      xh.send(null);
+
+ 
+    };
+
+    function getData(responsestring){
+      
+      var res = JSON.parse(responsestring);
+      heap.add(res.heap);
+      temp.add(res.analog);
+      temp2.add(res.analog2);
+      digi.add(res.gpio);
+	    data = res.data;
+
+      if (chartsLoaded){
+        chartdata.removeRows(0,chartdata.getNumberOfRows());
+             
+        for (sample in data){
+          chartdata.addRow([new Date(sample.toString()), calcThermistor(data[sample])]);
+        }
+      }
+            
+      chart.draw(chartdata, options);
+
+      if(running) 
+        setTimeout(loadValues, reloadPeriod);
+    }
+    
+    function run(){
+      if(!running){
+        running = true;
+        loadValues();
+      }
+    }
+    
+    function onBodyLoad(){
+      var refreshInput = document.getElementById("refresh-rate");
+      refreshInput.value = reloadPeriod;
+      refreshInput.onchange = function(e){
+        var value = parseInt(e.target.value);
+        reloadPeriod = (value > 0)?value:0;
+        e.target.value = reloadPeriod;
+      }
+      var stopButton = document.getElementById("stop-button");
+      stopButton.onclick = function(e){
+        running = false;
+      }
+      var startButton = document.getElementById("start-button");
+      startButton.onclick = function(e){
+        run();
+      }
+      
+      temp = createGraph(document.getElementById("analog"), "Temperature", 100, 128, 32, 160, false, "cyan", calcThermistor);
+      temp2 = createGraph(document.getElementById("analog2"), "Temperature", 100, 128, 32, 160, false, "cyan", calcThermistor);
+      
+      //temp = createGraph(document.getElementById("analog"), "Analog Input", 100, 128, 0, 4095, false, "cyan");
+      heap = createGraph(document.getElementById("heap"), "Current Heap", 100, 125, 200000, 300000, true, "orange");
+      digi = createDigiGraph(document.getElementById("digital"), "GPIO", 100, 146, [0, 4, 5, 16], "gold");
+      run();
+    }
+      //Example with 10K thermistor
+      function calcThermistor(v) {
+        //var t = ((40950000 / (4095-v)) - 10000);
+	var t = 4095 / (4095-v) - 1;
+	//console.log(t)
+	t= Math.log(t)
+	t /= 3435
+	t +=  1.0 / (25 + 273.15)
+	t = 1.0 / t       
+	t -= 273.15
+	t = t* 1.8 + 32
+
+	//t = ((1/(0.001129148+(0.000234125*t)+(0.0000000876741*t*t*t)))-273.15)*1.8+32;
+        return (t>220)?0:Math.round(t*10)/10;
+      }
+
+  </script>
+</head>
+<body id="index" style="margin:0; padding:0;" onload="onBodyLoad()">
+  <div id="controls" style="display: block; border: 1px solid rgb(68, 68, 68); padding: 5px; margin: 5px; width: 362px; background-color: rgb(238, 238, 238);">
+    <label>Period (ms):</label>
+    <input type="number" id="refresh-rate"/>
+    <input type="button" id="start-button" value="Start"/>
+    <input type="button" id="stop-button" value="Stop"/>
+  </div>
+  <div id="curve_chart" style="width: 900px; height: 500px"></div>
+  <div id="heap"></div>
+  <div id="analog"></div>
+  <div id="analog2"></div>
+  <div id="digital"></div>
+
+</body>
+</html>
